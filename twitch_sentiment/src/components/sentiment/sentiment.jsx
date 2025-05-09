@@ -99,18 +99,18 @@ function SentimentStream() {
   }, [messages]);
 
   return (
-    <div className="p-6 flex flex-row" style={{ height: 'calc(100vh - 60px)' }}>
+    <div className="bg-gray-900 p-6 flex flex-row" style={{ height: 'calc(100vh - 60px)' }}>
       <div className="flex flex-col w-1/2 h-full">
-        <div className="bg-white shadow-lg rounded-xl p-6 mb-5" style={{ height: '30%' }}>
+        <div className="bg-gray-800 text-white shadow-lg rounded-xl p-6 mb-5" style={{ height: '30%' }}>
           <div className="flex flex-col gap-6 mb-8 items-center w-full h-full">
-            <h1 className="text-4xl font-extrabold text-gray-900 mb-6 w-full text-center">Twitch Chat Analysis</h1>
+            <h1 className="text-4xl font-extrabold text-center mb-6">Twitch Chat Analysis</h1>
             <input
               type="text"
               value={url}
               placeholder="Enter Twitch URL e.g. https://www.twitch.tv/arteezy"
               onChange={(e) => setUrl(e.target.value)}
               disabled={streamStarted}
-              className="w-full px-5 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+              className="w-full px-5 py-3 border-2 border-gray-600 rounded-lg bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
             />
             {!streamStarted ? (
               <button
@@ -130,8 +130,8 @@ function SentimentStream() {
           </div>
         </div>
 
-        <div className="bg-white shadow-lg rounded-xl p-6 flex-grow" style={{ minHeight: '65%' }}>
-          <h2 className="text-2xl font-semibold text-gray-700 mb-4 text-center">
+        <div className="bg-gray-800 text-white shadow-lg rounded-xl p-6 flex-grow" style={{ minHeight: '65%' }}>
+          <h2 className="text-2xl font-semibold text-center mb-4">
             Chat Sentiment Distribution (Total Chats: {messages.length})
           </h2>
           <ResponsiveContainer width="100%" height="90%">
@@ -157,21 +157,21 @@ function SentimentStream() {
                 iconType="rect"  // Keep this to ensure rectangles show up
                 layout="horizontal"
                 align="center"
-                wrapperStyle={{ fontSize: '20px', paddingTop: '20px' }}
+                wrapperStyle={{ fontSize: '18px', paddingTop: '20px' }}
                 iconSize={0}  // Use the default icon size (height) here
                 formatter={(value) => (
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
                     <span
-                        style={{
+                      style={{
                         display: 'inline-block',
                         width: '50px',  // Adjust the width of the rectangle
                         height: '20px', // Keep the height the same
                         marginRight: '8px',
                         backgroundColor: COLORS[value] || '#888',  // Apply color dynamically
-                        }}
+                      }}
                     />
-                    <span style={{ color: '#333' }}>{value}</span>  {/* This will display the text next to the rectangle */}
-                    </div>
+                    <span style={{ color: '#fff' }}>{value}</span>  {/* This will display the text next to the rectangle */}
+                  </div>
                 )}
               />
             </PieChart>
@@ -179,20 +179,20 @@ function SentimentStream() {
         </div>
       </div>
 
-      <div className="w-1/2 bg-white shadow-lg rounded-xl p-6 ml-5 relative h-full">
-        <div className="text-xl font-bold text-gray-900 mb-4 text-center">
+      <div className="w-1/2 bg-gray-800 text-white shadow-lg rounded-xl p-6 ml-5 relative h-full">
+        <div className="text-xl font-bold text-center mb-4">
           Currently Streaming: <span className="text-blue-600">{streamer}</span>
         </div>
 
         <div
-          className="space-y-4 max-h-[750px] min-h-[750px] overflow-y-auto shadow-lg p-3 bg-gray-100 rounded-lg"
+          className="space-y-4 max-h-[750px] min-h-[750px] overflow-y-auto shadow-lg p-3 bg-gray-700 rounded-lg"
           ref={chatContainerRef}
           onScroll={handleScroll}
         >
           {messages.map((msg, index) => (
             <div
               key={index}
-              className={`p-4 rounded shadow-lg bg-white border-l-4 ${
+              className={`p-4 rounded shadow-lg bg-gray-900 border-l-4 ${
                 msg.sentiment === 'Positive'
                   ? 'border-green-500'
                   : msg.sentiment === 'Neutral'
@@ -200,7 +200,7 @@ function SentimentStream() {
                   : 'border-red-500'
               }`}
             >
-              <p className="text-gray-700 flex justify-between items-center">
+              <p className="text-white flex justify-between items-center">
                 <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                   <strong>{msg.username}:</strong> {msg.message}
                 </span>
