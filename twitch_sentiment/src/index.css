@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+body {
+  overflow: hidden;
+  height: 100%;
+  margin: 0;
+}
+
+.container {
+  max-height: 80vh;
+}
