@@ -1,2 +1,5 @@
 npm install -D tailwindcss postcss autoprefixer
 npm install recharts
+npm install react-icons
+npm install uuid
+npm install react-router-dom

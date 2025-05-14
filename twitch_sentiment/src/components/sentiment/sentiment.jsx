@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer } from 'recharts';
 
 function SentimentStream() {
@@ -27,7 +28,8 @@ function SentimentStream() {
   const [eventSource, setEventSource] = useState(null);
   const [isAutoScroll, setIsAutoScroll] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const [streamer, setStreamer] = useState('');  // State to hold streamer name
+  const [streamer, setStreamer] = useState('');
+  const [sessionId, setSessionId] = useState(null);
 
   const chatContainerRef = useRef(null);
   const chatEndRef = useRef(null);
@@ -40,14 +42,15 @@ function SentimentStream() {
     });
 
     if (response.ok) {
+      const newSessionId = uuidv4(); // 🆕 Generate new session ID
+      setSessionId(newSessionId);
+
       const source = new EventSource('http://localhost:8080/api/sentiment/stream');
       source.onmessage = (event) => {
         const data = JSON.parse(event.data);
         setMessages((prev) => [...prev, data]);
-
-        // Set the streamer's username when streaming starts
         if (!streamer) {
-          setStreamer(data.streamer);  // Set streamer from the first message
+          setStreamer(data.streamer);
         }
       };
       setEventSource(source);
@@ -63,8 +66,56 @@ function SentimentStream() {
       setEventSource(null);
     }
     setStreamStarted(false);
+  };
+
+  const resumeStream = () => {
+    const source = new EventSource('http://localhost:8080/api/sentiment/stream');
+    source.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      setMessages((prev) => [...prev, data]);
+      if (!streamer) {
+        setStreamer(data.streamer);
+      }
+    };
+    setEventSource(source);
+    setStreamStarted(true);
+  };
+
+  const saveChat = async () => {
+    const user = JSON.parse(localStorage.getItem("user"));
+    if (!user) {
+      alert('No user is logged in. Please log in to save the chat.');
+      return;
+    }
+    const userId = user.id;
+
+    const payload = {
+      streamer,
+      sessionId,
+      messages,
+      userId, // Add user ID to the payload
+    };
+
+    const response = await fetch('http://localhost:8080/save-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (response.ok) {
+      alert('Chat saved successfully!');
+    } else {
+      alert('Failed to save chat.');
+    }
+  };
+
+  const resetStream = () => {
     setMessages([]);
-    setStreamer('');  // Reset streamer when stream is stopped
+    setStreamer('');
+    setSessionId(null);
+    setStreamStarted(false);
+    if (eventSource) eventSource.close();
+    setEventSource(null);
   };
 
   useEffect(() => {
@@ -82,10 +133,10 @@ function SentimentStream() {
   const handleScroll = () => {
     const container = chatContainerRef.current;
     if (!container) return;
-  
+
     const isAtBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight < 200;
-  
+
     if (isAutoScroll !== isAtBottom) {
       setIsAutoScroll(isAtBottom);
       setShowScrollButton(!isAtBottom);
@@ -112,20 +163,41 @@ function SentimentStream() {
               disabled={streamStarted}
               className="w-full px-5 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
             />
-            {!streamStarted ? (
+            {!streamStarted && messages.length === 0 ? (
               <button
                 onClick={startStream}
                 className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg shadow-md hover:bg-blue-700 transition-transform transform hover:scale-102"
               >
                 Run
               </button>
-            ) : (
+            ) : streamStarted ? (
               <button
                 onClick={stopStream}
                 className="w-full bg-red-600 text-white px-6 py-3 rounded-lg shadow-md hover:bg-red-700 transition-transform transform hover:scale-102"
               >
                 Stop
               </button>
+            ) : (
+              <div className="flex flex-row gap-4 w-full">
+                <button
+                  onClick={resumeStream}
+                  className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg shadow-md hover:bg-green-700 transition"
+                >
+                  Resume
+                </button>
+                <button
+                  onClick={saveChat}
+                  className="flex-1 bg-purple-600 text-white px-6 py-3 rounded-lg shadow-md hover:bg-purple-700 transition"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={resetStream}
+                  className="flex-1 bg-gray-600 text-white px-6 py-3 rounded-lg shadow-md hover:bg-gray-700 transition"
+                >
+                  Reset
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -154,24 +226,23 @@ function SentimentStream() {
               <Tooltip />
               <Legend
                 verticalAlign="bottom"
-                iconType="rect"  // Keep this to ensure rectangles show up
+                iconType="rect"
                 layout="horizontal"
                 align="center"
                 wrapperStyle={{ fontSize: '20px', paddingTop: '20px' }}
-                iconSize={0}  // Use the default icon size (height) here
                 formatter={(value) => (
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
                     <span
-                        style={{
+                      style={{
                         display: 'inline-block',
-                        width: '50px',  // Adjust the width of the rectangle
-                        height: '20px', // Keep the height the same
+                        width: '50px',
+                        height: '20px',
                         marginRight: '8px',
-                        backgroundColor: COLORS[value] || '#888',  // Apply color dynamically
-                        }}
+                        backgroundColor: COLORS[value] || '#888',
+                      }}
                     />
-                    <span style={{ color: '#333' }}>{value}</span>  {/* This will display the text next to the rectangle */}
-                    </div>
+                    <span style={{ color: '#333' }}>{value}</span>
+                  </div>
                 )}
               />
             </PieChart>
