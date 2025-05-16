@@ -1,3 +1,4 @@
 server/venv/
 venv/
 .env
+server/app.log

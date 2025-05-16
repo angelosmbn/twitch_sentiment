@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 body {
+  @apply bg-[#0a0a0d] text-white font-sans;
   overflow: hidden;
   height: 100%;
   margin: 0;

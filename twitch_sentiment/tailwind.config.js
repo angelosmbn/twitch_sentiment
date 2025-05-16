@@ -3,13 +3,10 @@ module.exports = {
     theme: {
       extend: {
         colors: {
-          // Twitch purple color
-          'twitch-purple': '#6441A5',
-          // Dark theme background for navigation bar
-          'twitch-dark': '#1D1D1D',
-          // A lighter color for hover effects (like on buttons and links)
-          'twitch-hover': '#9D9D9D',
-        },
+          'twitch-dark': '#18181b',
+          'twitch-purple': '#9146FF',
+          'twitch-hover': '#a970ff',
+        },        
         fontFamily: {
           // Adding a custom font family, similar to Twitch's clean and modern look
           sans: ['Helvetica Neue', 'Arial', 'sans-serif'],

@@ -14,7 +14,7 @@ function LoginSignup() {
   const [invalidFields, setInvalidFields] = useState([]);
   const isLogin = mode === "login";
   const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem("user"));
+
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setInvalidFields([]);
@@ -131,6 +131,14 @@ function LoginSignup() {
                   onChange={handleChange}
                   className={inputClass("last_name")}
                 />
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="Email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  className={inputClass("email")}
+                />
               </>
             )}
             <input
@@ -185,6 +193,19 @@ function LoginSignup() {
               {isLogin ? "Sign Up" : "Login"}
             </button>
           </p>
+          {isLogin && (
+            <p className="text-sm text-gray-500 mt-2 text-center">
+              <button
+                onClick={() => {
+                  // Logic for handling forgot password can be added here
+                  console.log("Forgot Password clicked");
+                }}
+                className="text-blue-600 hover:underline font-medium"
+              >
+                Forgot Password?
+              </button>
+            </p>
+          )}
         </div>
       </div>
     </div>

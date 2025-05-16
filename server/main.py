@@ -15,13 +15,14 @@ from datetime import datetime, timezone
 import google.generativeai as genai
 from bson import ObjectId
 from werkzeug.security import generate_password_hash, check_password_hash
+
 # Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}}, supports_credentials=True)
 
-# Logging
+# Logging setup
 logging.basicConfig(level=logging.INFO)
 
 # MongoDB Setup
@@ -29,6 +30,7 @@ client = MongoClient("mongodb://localhost:27017/")
 db = client["twitch_sentiment_db"]
 chat_collection = db["chat_messages"]
 users_collection = db["users"]
+
 # Sentiment model
 model_name = os.getenv("SENTIMENT_MODEL", "cardiffnlp/twitter-roberta-base-sentiment")
 tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -43,60 +45,35 @@ NICKNAME = os.getenv("TWITCH_NICKNAME")
 # Gemini API
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-# Connection state
+# Global connection state and thread management
 current_channel = None
 current_socket = None
 is_connected = False
+reader_thread = None
+reader_thread_lock = threading.Lock()
 
-# Connect to Twitch IRC
-def connect_and_stream(channel_name):
-    global current_socket, is_connected
+def read_twitch_messages(sock, channel_name):
+    """
+    Thread function to read messages from Twitch IRC socket and yield events for SSE.
+    """
+    global is_connected, current_socket, current_channel
+    buffer = ""
+
     try:
-        sock = socket.socket()
-        sock.connect((SERVER, PORT))
-        sock.send(f"PASS {TOKEN}\n".encode('utf-8'))
-        sock.send(f"NICK {NICKNAME}\n".encode('utf-8'))
-        sock.send(f"JOIN #{channel_name}\n".encode('utf-8'))
-        current_socket = sock
-        is_connected = True
-        logging.info(f"Connected to #{channel_name}")
-    except Exception as e:
-        logging.error(f"Connection error: {e}")
-        is_connected = False
-
-@app.route('/api/start', methods=['POST'])
-def start_stream():
-    global current_channel, is_connected
-    data = request.json
-    twitch_url = data.get('url', '')
-    if not twitch_url.startswith('https://www.twitch.tv/'):
-        return jsonify({'error': 'Invalid Twitch URL'}), 400
-
-    username = twitch_url.split('/')[-1]
-    current_channel = username
-
-    if is_connected:
-        return jsonify({'message': f'Already connected to #{username}'}), 200
-
-    threading.Thread(target=connect_and_stream, args=(username,), daemon=True).start()
-    return jsonify({'message': f'Streaming from #{username}'}), 200
-
-@app.route('/api/sentiment/stream')
-def stream_sentiment():
-    def event_stream():
-        global current_socket, current_channel
-        buffer = ""
-        while current_socket:
+        while is_connected and current_socket == sock and current_channel == channel_name:
             try:
-                response = current_socket.recv(2048).decode('utf-8')
+                response = sock.recv(2048).decode('utf-8')
+                if not response:
+                    logging.warning("Empty response from socket, connection may be closed.")
+                    break
                 buffer += response
 
                 while '\r\n' in buffer:
                     line, buffer = buffer.split('\r\n', 1)
 
                     if line.startswith('PING'):
-                        current_socket.send("PONG\n".encode('utf-8'))
-                        logging.debug("Sent PONG")
+                        sock.send("PONG\n".encode('utf-8'))
+                        logging.debug("Sent PONG response to PING")
                         continue
 
                     parts = line.split(' ', 3)
@@ -104,6 +81,11 @@ def stream_sentiment():
                         username = parts[0].split('!')[0][1:]
                         message = parts[3][1:]
 
+                        if not message.strip():
+                            # Skip empty messages
+                            continue
+
+                        # Sentiment prediction
                         inputs = tokenizer(message, return_tensors="pt")
                         with torch.no_grad():
                             outputs = model(**inputs)
@@ -112,20 +94,107 @@ def stream_sentiment():
                         labels = ['Negative', 'Neutral', 'Positive']
                         predicted_class = torch.argmax(probs).item()
 
-                        data = json.dumps({
+                        data_dict = {
                             "username": username,
                             "message": message,
                             "sentiment": labels[predicted_class],
                             "confidence": " / ".join(
                                 [f"{label}: {round(prob.item(), 2)}" for label, prob in zip(labels, probs[0])]
                             ),
-                            "streamer": current_channel
-                        })
-                        yield f"data: {data}\n\n"
+                            "streamer": channel_name
+                        }
+
+                        data_json = json.dumps(data_dict)
+
+                        # Yield only if message is not empty
+                        if message.strip():
+                            yield f"data: {data_json}\n\n"
+
                         time.sleep(0.5)
+
             except (socket.error, OSError) as e:
-                logging.error(f"Socket error: {e}")
+                logging.error(f"Socket error during message reading: {e}")
                 break
+    finally:
+        logging.info(f"Reader thread for #{channel_name} ending.")
+        is_connected = False
+        current_socket = None
+        current_channel = None
+
+def connect_and_stream(channel_name):
+    global current_socket, is_connected, current_channel
+    try:
+        sock = socket.socket()
+        sock.connect((SERVER, PORT))
+        sock.send(f"PASS {TOKEN}\n".encode('utf-8'))
+        sock.send(f"NICK {NICKNAME}\n".encode('utf-8'))
+        sock.send(f"JOIN #{channel_name}\n".encode('utf-8'))
+        current_socket = sock
+        current_channel = channel_name
+        is_connected = True
+        logging.info(f"Connected to Twitch channel #{channel_name}")
+    except Exception as e:
+        logging.error(f"Error connecting to Twitch IRC: {e}")
+        is_connected = False
+        current_socket = None
+        current_channel = None
+
+@app.route('/api/start', methods=['POST'])
+def start_stream():
+    global reader_thread, is_connected, current_socket, current_channel
+
+    data = request.json
+    twitch_url = data.get('url', '')
+    if not twitch_url.startswith('https://www.twitch.tv/'):
+        return jsonify({'error': 'Invalid Twitch URL'}), 400
+
+    username = twitch_url.split('/')[-1]
+
+    if is_connected and current_channel == username:
+        return jsonify({'message': f'Already connected to #{username}'}), 200
+
+    # Disconnect previous connection if any
+    if is_connected and current_socket:
+        try:
+            current_socket.close()
+        except Exception as e:
+            logging.error(f"Error closing previous socket: {e}")
+
+    current_channel = username
+    is_connected = False
+    current_socket = None
+
+    threading.Thread(target=connect_and_stream, args=(username,), daemon=True).start()
+    return jsonify({'message': f'Streaming from #{username}'}), 200
+
+@app.route('/api/sentiment/stream')
+def stream_sentiment():
+    global current_socket, current_channel, is_connected, reader_thread, reader_thread_lock
+
+    def event_stream():
+        # Wait for connection to be established, max 2 seconds (20 * 0.1s)
+        attempts = 0
+        while not is_connected and attempts < 20:
+            time.sleep(0.1)
+            attempts += 1
+        
+        if not is_connected or not current_socket:
+            logging.error("Not connected to Twitch IRC or socket unavailable.")
+            yield f"data: {json.dumps({'error': 'Not connected to Twitch IRC'})}\n\n"
+            return
+
+        # Run the message reader generator and yield only real messages
+        for message in read_twitch_messages(current_socket, current_channel):
+            yield message
+
+    # Ensure only one reader thread per connection
+    with reader_thread_lock:
+        if not reader_thread or not reader_thread.is_alive():
+            reader_thread = threading.Thread(
+                target=lambda: None,  # Dummy; actual reading done in generator above
+                daemon=True
+            )
+            reader_thread.start()
 
     return Response(event_stream(), mimetype='text/event-stream')
 
@@ -165,7 +234,7 @@ def save_chat():
     )
 
     summary_data = {
-        "user_id": user_id,  # Add user ID as a foreign key from the user_collection
+        "user_id": user_id,
         "streamer_name": streamer_name,
         "session_id": session_id,
         "date": datetime.now(timezone.utc),
@@ -175,34 +244,36 @@ def save_chat():
         "summary": summary
     }
 
-    # Overwrite previous record with same streamer_name + session_id
-    chat_collection.replace_one(
-        {"streamer_name": streamer_name, "session_id": session_id},
-        summary_data,
-        upsert=True
-    )
-
-    logging.info("Successfully saved/updated data")
-    return jsonify({"status": "saved", "streamer": streamer_name}), 201
+    try:
+        chat_collection.replace_one(
+            {"streamer_name": streamer_name, "session_id": session_id},
+            summary_data,
+            upsert=True
+        )
+        logging.info(f"Chat session saved: {streamer_name} ({session_id})")
+        return jsonify({"status": "saved", "streamer": streamer_name}), 201
+    except Exception as e:
+        logging.error(f"Failed to save chat session: {e}")
+        return jsonify({"error": "Failed to save chat"}), 500
 
 def generate_summary_with_gemini(streamer_name, total_chats, sentiment_counts, sentiment_percentages):
     prompt = f"""
-    Generate a brief (maximum 5 sentences) summary of this Twitch stream's chat sentiment analysis.
-    Do not speculate, only describe what the numbers show.
+Generate a brief (maximum 5 sentences) summary of this Twitch stream's chat sentiment analysis.
+Do not speculate, only describe what the numbers show.
 
-    Streamer: {streamer_name}
-    Total Chat Messages: {total_chats}
+Streamer: {streamer_name}
+Total Chat Messages: {total_chats}
 
-    Sentiment Counts:
-    - Positive: {sentiment_counts['positive']}
-    - Neutral: {sentiment_counts['neutral']}
-    - Negative: {sentiment_counts['negative']}
+Sentiment Counts:
+- Positive: {sentiment_counts['positive']}
+- Neutral: {sentiment_counts['neutral']}
+- Negative: {sentiment_counts['negative']}
 
-    Sentiment Percentages:
-    - Positive: {sentiment_percentages['positive']}%
-    - Neutral: {sentiment_percentages['neutral']}%
-    - Negative: {sentiment_percentages['negative']}%
-    """
+Sentiment Percentages:
+- Positive: {sentiment_percentages['positive']}%
+- Neutral: {sentiment_percentages['neutral']}%
+- Negative: {sentiment_percentages['negative']}%
+"""
 
     try:
         model = genai.GenerativeModel("models/gemini-1.5-flash")
@@ -212,8 +283,6 @@ def generate_summary_with_gemini(streamer_name, total_chats, sentiment_counts, s
         logging.error(f"Gemini API failed: {e}")
         return "Summary generation failed due to API quota limits or connectivity issues."
 
-
-
 @app.route("/api/history", methods=["GET"])
 def get_all_history():
     try:
@@ -222,18 +291,16 @@ def get_all_history():
             logging.error("User ID is missing in the request")
             return jsonify({"error": "User ID is required"}), 400
 
-        # Fetch sessions with additional fields and improved error handling
         sessions = chat_collection.find({"user_id": user_id}, {
             "_id": 1,
             "streamer_name": 1,
             "date": 1,
             "total_chats": 1,
             "summary": 1,
-            "sentiment_counts": 1,  # Include sentiment counts
-            "sentiment_percentages": 1  # Include sentiment percentages
+            "sentiment_counts": 1,
+            "sentiment_percentages": 1
         }).sort("date", -1)
 
-        # Convert sessions to a list and handle ObjectId conversion
         sessions_list = []
         for session in sessions:
             session["_id"] = str(session["_id"])
@@ -243,7 +310,6 @@ def get_all_history():
     except Exception as e:
         logging.error(f"Failed to fetch history: {e}")
         return jsonify({"error": "Internal server error"}), 500
-
 
 @app.route("/api/history/<session_id>", methods=["GET"])
 def get_history_detail(session_id):
@@ -275,7 +341,6 @@ def delete_sessions():
     except Exception as e:
         logging.error(f"Delete failed: {e}")
         return jsonify({"error": "Internal server error"}), 500
-
 
 # Auth
 @app.route("/api/auth/signup", methods=["POST"])
@@ -317,7 +382,6 @@ def login():
     if not user or not check_password_hash(user["password"], password):
         return jsonify({"error": "Invalid username or password."}), 401
 
-    # Return user info (excluding password)
     user_data = {
         "id": str(user["_id"]),
         "username": user["username"],
@@ -327,6 +391,9 @@ def login():
 
     return jsonify({"user": user_data}), 200
 
+@app.route('/healthz')
+def health_check():
+    return 'OK', 200
 
 
 if __name__ == "__main__":
