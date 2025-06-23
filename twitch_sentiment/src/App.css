@@ -1,0 +1,23 @@
+/* CSS for the fade transition */
+.fade-in-out {
+  transition: opacity 1s ease-in-out;
+  opacity: 0; /* Initially hidden */
+}
+
+.fade-in-out.show {
+  opacity: 1; /* Visible after transition */
+}
+
+.loader {
+  border-top-color: #9146ff;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}

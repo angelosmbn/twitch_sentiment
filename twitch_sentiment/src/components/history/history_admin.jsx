@@ -11,7 +11,7 @@ import {
 
 import { downloadPDF } from './download_pdf';
 
-function History() {
+function HistoryAdmin() {
   const [sessions, setSessions] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [nameSort, setNameSort] = useState('');
@@ -23,25 +23,17 @@ function History() {
   const user = JSON.parse(localStorage.getItem("user"));
   const userId = user?.id;
 
-  const adminMode = JSON.parse(localStorage.getItem("adminMode"));
-
   useEffect(() => {
     if (!userId) return;
 
-    // Use GET request with query parameters for user_id and adminMode
-    const params = new URLSearchParams({
-      user_id: userId,
-      adminMode: adminMode
-    });
-
-    fetch(`http://localhost:8080/api/history?${params.toString()}`)
+    fetch(`http://localhost:8080/api/history?user_id=${userId}`)
       .then(res => res.json())
       .then(data => {
         setSessions(data);
         setFiltered(data);
       })
       .catch(err => console.error('Failed to load history:', err));
-  }, [userId, adminMode]);
+  }, [userId]);
 
   useEffect(() => {
     let filteredData = [...sessions];
@@ -88,53 +80,41 @@ function History() {
     });
 
     if (result.isConfirmed) {
-        try {
-          const user = JSON.parse(localStorage.getItem("user"));
-          const userId = user?.id;
+      try {
+        const user = JSON.parse(localStorage.getItem("user"));
+        const userId = user?.id;
 
-          const res = await fetch('http://localhost:8080/api/history/delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: [id], user_id: userId, adminMode }),
-          });
+        const res = await fetch('http://localhost:8080/api/history/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: [id], user_id: userId }),
+        });
 
-          if (res.ok) {
-            Swal.fire('Archived!', 'The session has been archived.', 'success');
-            setSessions(sessions.filter((s) => s._id !== id));
-            setFiltered(filtered.filter((s) => s._id !== id));
-          } else {
-            Swal.fire('Error!', 'Failed to archive the session.', 'error');
-          }
-        } catch (err) {
-          console.error(err);
-          Swal.fire('Error!', 'An error occurred.', 'error');
+        if (res.ok) {
+          Swal.fire('Archived!', 'The session has been archived.', 'success');
+          setSessions(sessions.filter((s) => s._id !== id));
+          setFiltered(filtered.filter((s) => s._id !== id));
+        } else {
+          Swal.fire('Error!', 'Failed to archive the session.', 'error');
         }
+      } catch (err) {
+        console.error(err);
+        Swal.fire('Error!', 'An error occurred.', 'error');
+      }
     }
   };
 
   return (
-    <div className={adminMode ? "" : "p-10 max-w-7xl mx-auto bg-[#0e0e10] min-h-screen rounded-lg shadow-2xl text-gray-300 font-sans"}>
-      <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+    <div className="p-10 max-w-7xl mx-auto bg-[#0e0e10] min-h-screen rounded-lg shadow-2xl text-gray-300 font-sans">
+      <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <h2 className="text-4xl font-black text-[#9146FF]">Chat Analysis History</h2>
-
-        <input
-          type="text"
-          placeholder="Search by name..."
-          // value={searchTerm}
-          // onChange={(e) => setSearchTerm(e.target.value)}
-          className="bg-[#1f1f23] placeholder-gray-500 text-white border border-[#9146FF] rounded-md px-4 py-2 shadow-md focus:outline-none focus:ring-2 focus:ring-[#9146FF]"
-        />
       </div>
 
-      <div
-        className="overflow-y-auto rounded-lg shadow-lg border border-[#2c2c32] bg-[#1f1f23]"
-        style={adminMode ? { height: 'calc(100vh - 172px)' } : undefined}
-      >
+      <div className="overflow-x-auto rounded-lg shadow-lg border border-[#2c2c32] bg-[#1f1f23]">
         <div className="max-h-[770px] overflow-y-auto">
           <table className="min-w-full text-sm table-fixed">
             <thead className="bg-[#26262c] text-white sticky top-0">
               <tr>
-                {adminMode && <th className="px-6 py-3 text-left w-40">User</th>}
                 <th className="px-6 py-3 text-left w-40">Streamer</th>
                 <th className="px-6 py-3 text-left w-48">
                   <div className="flex items-center">
@@ -149,7 +129,7 @@ function History() {
                     />
                   </div>
                 </th>
-                <th className="px-6 py-3 text-center w-10">
+                <th className="px-6 py-3 text-center w-40">
                   <div className="flex justify-center">
                     Total Chats
                     <FaSortAmountDown
@@ -170,9 +150,6 @@ function History() {
                   key={session._id}
                   className="border-t border-[#3a3a44] hover:bg-[#2f1a63] transition-colors"
                 >
-                  {adminMode && (
-                    <td className="px-6 py-4 font-medium">{session.user_full_name}</td>
-                  )}
                   <td className="px-6 py-4 font-medium">{session.streamer_name}</td>
                   <td className="px-6 py-4">{new Date(session.date).toLocaleString()}</td>
                   <td className="px-6 py-4 text-[#9146FF] text-center">{session.total_chats}</td>
@@ -213,4 +190,4 @@ function History() {
   );
 }
 
-export default History;
+export default HistoryAdmin;

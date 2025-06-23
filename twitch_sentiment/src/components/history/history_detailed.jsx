@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { FaTrashAlt, FaArrowLeft } from 'react-icons/fa';
+import { FaArrowLeft, FaRegLightbulb, FaSignal, FaTrash } from 'react-icons/fa';
+import Swal from 'sweetalert2';
+import { downloadPDF } from './download_pdf'; // Utility function
 
 const COLORS = {
   positive: '#4CAF50',
@@ -17,7 +18,7 @@ function HistoryDetail() {
   const [currentIndex, setCurrentIndex] = useState(null);
 
   const user = JSON.parse(localStorage.getItem("user"));
-  const userId = user ? user.id : null;
+  const userId = user?.id;
 
   useEffect(() => {
     if (!userId) return;
@@ -42,25 +43,40 @@ function HistoryDetail() {
   }, [id, userId]);
 
   const handleDelete = async () => {
-    const confirmed = window.confirm("Are you sure you want to delete this session?");
-    if (!confirmed) return;
+    const confirmed = await Swal.fire({
+      title: 'Delete this history?',
+      text: 'This history will be deleted.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Delete',
+      cancelButtonText: 'Cancel',
+      background: '#1f1f2f',
+      color: '#eee',
+      confirmButtonColor: '#e91916',
+      cancelButtonColor: '#666',
+    });
+
+    if (!confirmed.isConfirmed) return;
 
     try {
+      const user = JSON.parse(localStorage.getItem("user"));
+      const userId = user?.id;
+
       const res = await fetch('http://localhost:8080/api/history/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: [id] }),
+        body: JSON.stringify({ ids: [id], user_id: userId }),
       });
 
       if (res.ok) {
-        alert("Session deleted.");
+        Swal.fire('Deleted!', 'The session has been hidden successfully.', 'success');
         navigate("/history");
       } else {
-        alert("Failed to delete session.");
+        Swal.fire('Error!', 'Failed to hide the session.', 'error');
       }
     } catch (err) {
       console.error(err);
-      alert("Error deleting session.");
+      Swal.fire('Error!', 'An error occurred while hiding the session.', 'error');
     }
   };
 
@@ -76,12 +92,10 @@ function HistoryDetail() {
     return <div className="p-10 text-center text-gray-400 bg-[#121214] min-h-screen">Loading...</div>;
   }
 
-  const data = Object.entries(session.sentiment_counts).map(([key, value]) => ({
-    name: key.charAt(0).toUpperCase() + key.slice(1),
-    value,
-  }));
-
-  const totalMessages = session.total_chats;
+  const scrollbarStyles = {
+    scrollbarWidth: 'thin',
+    scrollbarColor: '#6441A5 #1f1f23',
+  };
 
   return (
     <div className="p-6 flex flex-col items-center min-h-screen bg-[#121214] text-white font-sans">
@@ -107,127 +121,94 @@ function HistoryDetail() {
       </div>
 
       {/* Session Card */}
-      <div className="bg-[#1f1f23] rounded-lg shadow-xl p-8 max-w-5xl w-full relative">
-        {/* Back Button */}
-        <button
-          onClick={() => navigate("/history")}
-          className="absolute top-8 left-4 flex items-center gap-2 text-[#9146FF] hover:text-[#772ce8] transition cursor-pointer"
-        >
-          <FaArrowLeft />
-          Back
-        </button>
-
+      <div className="bg-[#1f1f23] rounded-lg shadow-xl p-8 max-w-5xl w-full relative overflow-y-auto" style={{ maxHeight: 'calc(100vh - 120px)', ...scrollbarStyles }}>
         {/* Header */}
-        <div className="flex justify-between items-start mb-6 mt-12">
-          <div>
-            <h2 className="text-3xl font-bold text-white">
-              {session.streamer_name}'s Stream Summary
-            </h2>
-            <p className="text-gray-400 mt-1 text-sm italic">
-              {new Date(session.date).toLocaleString()}
-            </p>
-          </div>
+        <div className="flex justify-between items-center absolute top-8 left-4 w-full">
           <button
-            onClick={handleDelete}
-            className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition cursor-pointer"
+            onClick={() => navigate("/history")}
+            className="flex items-center gap-2 text-[#9146FF] hover:text-[#772ce8] transition cursor-pointer"
           >
-            <FaTrashAlt />
-            Delete
+            <FaArrowLeft />
+            Back
           </button>
-        </div>
-
-        {/* Summary Text */}
-        <p className="text-gray-300 text-lg mb-8 leading-relaxed">{session.summary}</p>
-
-        {/* Chart & Stats */}
-        <div className="flex flex-col md:flex-row gap-10">
-          <div className="w-full md:w-2/3" style={{ position: 'relative', height: 350 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={data}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={70}
-                  outerRadius={120}
-                >
-                  {data.map((entry) => (
-                    <Cell key={entry.name} fill={COLORS[entry.name.toLowerCase()]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#1f1f23', border: 'none' }}
-                  itemStyle={{ color: 'white' }}
-                  cursor={{ fill: 'rgba(145, 70, 255, 0.15)' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-
-            {/* Centered total messages */}
-            <div
-              style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                color: 'white',
-                fontWeight: 'bold',
-                fontSize: 30,
-                pointerEvents: 'none',
-                userSelect: 'none',
-                textAlign: 'center',
-                lineHeight: 1,
-              }}
+          <div className="flex flex-row items-center space-x-4">
+            <button
+              onClick={() => downloadPDF(session, userId)} // ✅ Fixed here
+              className="flex items-center gap-2 text-white bg-[#9146FF] hover:bg-[#772ce8] transition px-4 py-2 rounded-md cursor-pointer"
             >
-              {totalMessages} <br />
-              <span style={{ color: '#aaaaaa', fontSize: 16, fontWeight: 'normal' }}>
-                Total Messages
-              </span>
-            </div>
-          </div>
-
-          {/* Stats */}
-          <div className="w-full md:w-1/3 bg-[#2e2e3e] rounded-md p-5 shadow-inner space-y-4 text-gray-300">
-            <div className="text-xl font-semibold border-b border-[#9146FF] pb-2 text-white">Session Stats</div>
-            <p><span className="font-medium">Total Chats:</span> {totalMessages}</p>
-            <p><span className="font-medium">Positive:</span> {session.sentiment_counts.positive} ({session.sentiment_percentages.positive}%)</p>
-            <p><span className="font-medium">Neutral:</span> {session.sentiment_counts.neutral} ({session.sentiment_percentages.neutral}%)</p>
-            <p><span className="font-medium">Negative:</span> {session.sentiment_counts.negative} ({session.sentiment_percentages.negative}%)</p>
+              <FaRegLightbulb />
+              Download
+            </button>
+            <button
+              onClick={handleDelete}
+              className="flex items-center gap-2 text-white bg-red-600 hover:bg-red-700 transition px-4 py-2 rounded-md cursor-pointer mr-7"
+            >
+              <FaTrash />
+              Delete
+            </button>
           </div>
         </div>
 
-        {/* Custom Legend below chart */}
-        <div
-          className="w-full flex justify-center mt-6 text-white text-center"
-          style={{ borderRadius: '0.5rem' }}
-        >
-          <div className="grid grid-cols-3 gap-6 w-3/4 max-w-xl">
-            {data.map(({ name, value }) => {
-              const lowerName = name.toLowerCase();
-              const percent = totalMessages ? ((value / totalMessages) * 100).toFixed(1) : 0;
-              const bgColor =
-                lowerName === 'positive'
-                  ? 'rgba(76, 175, 80, 0.2)'
-                  : lowerName === 'neutral'
-                  ? 'rgba(255, 193, 7, 0.2)'
-                  : 'rgba(244, 67, 54, 0.2)';
-              const textColor =
-                lowerName === 'positive'
-                  ? 'text-green-500'
-                  : lowerName === 'neutral'
-                  ? 'text-yellow-500'
-                  : 'text-red-500';
+        {/* Streamer Info */}
+        <div className="flex justify-center items-center mb-6 mt-12">
+          <FaSignal className="text-3xl text-[#9146FF]" />
+          <h2 className="text-3xl font-bold text-white mx-4">
+            {session.streamer_name}
+          </h2>
+        </div>
+        <p className="text-gray-400 text-sm italic mb-6 text-center">
+          Analysis from {new Date(session.date).toLocaleString()}
+        </p>
 
-              return (
-                <div key={name} className="p-3 border border-gray-700 rounded-md" style={{ backgroundColor: bgColor }}>
-                  <div className={`font-extrabold mb-1 text-lg ${textColor}`}>{name}</div>
-                  <div className="text-3xl font-bold">{value}</div>
-                  <div className="text-sm text-gray-400">{percent}% messages</div>
-                </div>
-              );
-            })}
+        {/* Sentiment Cards */}
+        <div className="flex justify-between mb-6 gap-6">
+          {['positive', 'neutral', 'negative'].map((type) => (
+            <div key={type} className="w-full md:w-1/3 bg-[#2e2e3e] rounded-md p-5 shadow-inner text-center text-white">
+              <div className={`text-xl font-bold mb-2`} style={{ color: COLORS[type] }}>
+                {type.charAt(0).toUpperCase() + type.slice(1)}
+              </div>
+              <div className="text-3xl font-bold">
+                {session.sentiment_counts[type]}
+              </div>
+              <div className="text-sm font-medium mt-1">
+                {session.sentiment_percentages[type]}%
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* AI Summary */}
+        <div className="bg-[#2e2e3e] rounded-md p-6 shadow-xl mb-6">
+          <div className="flex items-center text-white text-2xl font-semibold mb-4">
+            <FaRegLightbulb className="text-purple-500 mr-2 animate-pulse" />
+            <span>AI Analysis Summary</span>
+          </div>
+          <p className="text-gray-300">{session.summary}</p>
+        </div>
+
+        {/* Top Chatters */}
+        <div className="bg-[#2e2e3e] shadow-md rounded-xl p-6 border border-gray-600">
+          <h3 className="text-3xl font-bold mb-2">Top Chatter Analysis</h3>
+          <p className="text-sm text-gray-500 mb-4">Users with the most messages by sentiment</p>
+          <div className="flex gap-4">
+            {['Positive', 'Neutral', 'Negative'].map((sentiment) => (
+              <div key={sentiment} className="flex-1 bg-[#20202b] border border-gray-700 rounded-lg p-3 overflow-y-auto" style={scrollbarStyles}>
+                <h4 className={`text-xl font-semibold mb-3 ${sentiment === 'Positive' ? 'text-green-500' : sentiment === 'Neutral' ? 'text-yellow-500' : 'text-red-500'}`}>
+                  {sentiment}
+                </h4>
+                {session.top_chatters[sentiment] && session.top_chatters[sentiment].length === 0 && (
+                  <p className="text-gray-500 text-sm">No data</p>
+                )}
+                {session.top_chatters[sentiment]?.map((chatter, index) => (
+                  <div key={index} className="flex justify-between items-center mb-2 px-2 py-1 rounded hover:bg-gray-700">
+                    <span className="truncate" title={chatter.username}>{chatter.username}</span>
+                    <span className={`rounded-full w-8 h-8 flex justify-center items-center font-bold text-sm text-white ${sentiment === 'Positive' ? 'bg-green-500' : sentiment === 'Neutral' ? 'bg-yellow-500' : 'bg-red-500'}`}>
+                      {chatter.count}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         </div>
       </div>
