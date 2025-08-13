@@ -1,1 +1,21 @@
-# twitch_sentiment
+# Twitch Sentiment
+
+# .env
+
+```
+TWITCH_TOKEN=oauth:
+TWITCH_NICKNAME=
+TWITCH_SERVER=
+TWITCH_PORT=
+
+SENTIMENT_MODEL=
+
+GOOGLE_API_KEY=
+
+SENDER_EMAIL=
+SENDER_PASSWORD=
+
+
+MONGO_URI=mongodb://localhost:27017/
+MONGO_DB_NAME=twitch_sentiment_db
+```

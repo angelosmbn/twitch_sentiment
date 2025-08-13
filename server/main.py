@@ -16,6 +16,15 @@ import google.generativeai as genai
 from bson import ObjectId
 from werkzeug.security import generate_password_hash, check_password_hash
 from pymongo import DESCENDING
+import random
+import string
+import smtplib
+from email.mime.text import MIMEText
+import email.utils
+import secrets
+from urllib.parse import urlencode
+from werkzeug.utils import secure_filename
+import gridfs
 # Load environment variables
 load_dotenv()
 
@@ -112,10 +121,15 @@ def start_stream():
 
     data = request.json
     twitch_url = data.get('url', '')
-    if not twitch_url.startswith('https://www.twitch.tv/'):
+    # Accept both normal Twitch URLs and raid URLs (e.g., https://www.twitch.tv/raid/username)
+    import re
+
+    # Regex to match both /twitch.tv/<username> and /twitch.tv/raid/<username>
+    match = re.match(r'https://www\.twitch\.tv/(raid/)?([A-Za-z0-9_]+)', twitch_url)
+    if not match:
         return jsonify({'error': 'Invalid Twitch URL'}), 400
 
-    username = twitch_url.split('/')[-1]
+    username = match.group(2)
 
     if is_connected and current_channel == username:
         return jsonify({'message': f'Already connected to #{username}'}), 200
@@ -437,14 +451,13 @@ def signup():
     data = request.json
     first_name = data.get("first_name", "").strip()
     last_name = data.get("last_name", "").strip()
-    username = data.get("username", "").strip().lower()
     password = data.get("password", "")
     email = data.get("email", "").strip()
     role = data.get("role", "employee").strip()  # Set default role to "employee"
     status = data.get("status", "active").strip()
 
     # Check if all fields are provided
-    if not all([first_name, last_name, username, password, email]):
+    if not all([first_name, last_name, password, email]):
         return jsonify({"error": "All fields are required."}), 400
 
     # Validate email format (basic validation)
@@ -452,10 +465,6 @@ def signup():
         return jsonify({"error": "Invalid email format."}), 400
 
     user_collection = db["users"]
-
-    # Check if the username already exists
-    if user_collection.find_one({"username": username}):
-        return jsonify({"error": "Username already exists."}), 409
 
     # Check if the email already exists
     if user_collection.find_one({"email": email}):
@@ -468,7 +477,6 @@ def signup():
     user_id = user_collection.insert_one({
         "first_name": first_name,
         "last_name": last_name,
-        "username": username,
         "email": email,
         "password": hashed_password,
         "role": role,  # Add the role field
@@ -486,15 +494,25 @@ def signup():
 @app.route("/api/auth/login", methods=["POST"])
 def login():
     data = request.json
-    username = data.get("username", "").strip().lower()
+    email = data.get("email", "").strip().lower()
     password = data.get("password", "")
 
-    if not username or not password:
-        return jsonify({"error": "Username and password are required."}), 400
+    if not email or not password:
+        return jsonify({"error": "Email and password are required."}), 400
 
-    user = users_collection.find_one({"username": username})
+    user = users_collection.find_one({"email": email})
     if not user or not check_password_hash(user["password"], password):
-        return jsonify({"error": "Invalid username or password."}), 401
+        return jsonify({"error": "Invalid email or password."}), 401
+
+    # Ensure user status is active
+    if user.get("status", "active") != "active":
+        return jsonify({"error": "Account is not active."}), 403
+
+    # Get profile image if exists
+    profile_image_url = None
+    if user.get("profile_image"):
+        file_id = user["profile_image"]
+        profile_image_url = f"http://localhost:8080/api/user/profile-image/{file_id}"
 
     user_data = {
         "id": str(user["_id"]),
@@ -502,7 +520,8 @@ def login():
         "first_name": user["first_name"],
         "last_name": user["last_name"],
         "email": user["email"],  # Ensure email is included
-        "role": user["role"]
+        "role": user["role"],
+        "profile_image": profile_image_url
     }
     activity = "Logged in"
     user_id = user["_id"]
@@ -603,9 +622,9 @@ def edit_user(user_id):
             return jsonify({"error": "User not found"}), 404
         
         # Only allow admin to edit user details
-        if current_user["role"] != "admin":
-            logging.error(f"Unauthorized access attempt by user_id: {user_id}")
-            return jsonify({"error": "You are not authorized to edit this user."}), 403
+        # if current_user["role"] != "admin":
+        #     logging.error(f"Unauthorized access attempt by user_id: {user_id}-{current_user["role"]}")
+        #     return jsonify({"error": "You are not authorized to edit this user."}), 403
 
         # Validate required fields (you can add more validation as needed)
         if "first_name" not in data or "last_name" not in data or "email" not in data:
@@ -817,6 +836,13 @@ def log_pdf_generation():
     log_activity("Downloaded Sentiment PDF", user_id, details=details)
     return jsonify({"message": "PDF generation logged successfully."}), 200
 
+@app.route("/api/log/sign_out", methods=["POST"])
+def log_sign_out():
+    data = request.get_json()
+    user_id = data.get("userId")
+    log_activity("Logged out", user_id)
+    return jsonify({"message": "Sign out logged successfully."}), 200
+
 
 @app.route("/api/logs", methods=["GET"])
 def get_logs():
@@ -899,7 +925,270 @@ def get_dashboard_summary():
         return jsonify({"error": "Internal server error"}), 500
 
 
+@app.route("/auth/request-reset", methods=["POST"])
+def request_password_reset():
+    try:
+        data = request.get_json()
+        email = data.get("email", "").strip().lower()
 
+        if not email:
+            return jsonify({"message": "Email is required."}), 400
+
+        user = users_collection.find_one({"email": email})
+        if not user:
+            return jsonify({"message": "Email not found in our records."}), 404
+
+        reset_token = secrets.token_urlsafe(32)
+        now = datetime.now(timezone.utc)
+
+        users_collection.update_one(
+            {"_id": user["_id"]},
+            {"$set": {
+                "reset_token": reset_token,
+                "reset_token_created": now
+            }}
+        )
+
+        try:
+            reset_url = f"http://localhost:5173/reset-password?{urlencode({'token': reset_token})}"
+            send_reset_email(email, reset_url)
+        except Exception as e:
+            logging.error(f"Email error: {e}")
+            return jsonify({"message": "Failed to send email."}), 500
+
+        return jsonify({"message": "Password reset link sent to your email."}), 200
+
+    except Exception as e:
+        logging.error(f"Error in request_password_reset: {e}")
+        return jsonify({"message": "Internal server error"}), 500
+
+
+@app.route("/auth/reset-password", methods=["POST"])
+def reset_password():
+    try:
+        data = request.get_json()
+        token = data.get("token", "").strip()
+        new_password = data.get("new_password", "")
+
+        if not (token and new_password):
+            return jsonify({"message": "Token and new password are required."}), 400
+
+        user = users_collection.find_one({"reset_token": token})
+        if not user or "reset_token_created" not in user:
+            return jsonify({"message": "Invalid or expired token."}), 400
+
+        created_time = user["reset_token_created"]
+        if isinstance(created_time, str):
+            created_time = datetime.fromisoformat(created_time)
+        if created_time.tzinfo is None:
+            created_time = created_time.replace(tzinfo=timezone.utc)
+
+        if (datetime.now(timezone.utc) - created_time).total_seconds() > 900:
+            return jsonify({"message": "Reset link expired."}), 400
+
+        hashed_pw = generate_password_hash(new_password)
+        users_collection.update_one(
+            {"_id": user["_id"]},
+            {
+                "$set": {"password": hashed_pw},
+                "$unset": {"reset_token": "", "reset_token_created": ""}
+            }
+        )
+
+        return jsonify({"message": "Password reset successful."}), 200
+
+    except Exception as e:
+        logging.error(f"Error in reset_password: {e}")
+        return jsonify({"message": "Internal server error"}), 500
+
+
+def send_reset_email(recipient_email, reset_url):
+    sender_email = os.getenv("SENDER_EMAIL")
+    sender_password = os.getenv("SENDER_PASSWORD")
+
+    no_reply_name = "TwitchSentiment Analysis (No Reply)"
+    from_header = email.utils.formataddr((no_reply_name, sender_email))
+
+    html_content = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; background-color: #f9f9f9; padding: 20px;">
+        <div style="max-width: 600px; margin: auto; background-color: #fff; border-radius: 8px; padding: 30px; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
+          <h2 style="color: #9146FF; text-align: center;">TwitchSentiment Analysis</h2>
+          <p style="font-size: 16px; color: #333;">Hello,</p>
+          <p style="font-size: 15px; color: #444;">
+            You requested a password reset. Click the button below to reset your password:
+          </p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="{reset_url}" style="background-color: #9146FF; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold;">Reset Password</a>
+          </div>
+          <p style="font-size: 14px; color: #777;">
+            Or copy and paste the link into your browser:<br/>
+            <a href="{reset_url}" style="color: #9146FF;">{reset_url}</a>
+          </p>
+          <p style="font-size: 13px; color: #999; margin-top: 30px;">
+            This link will expire in 15 minutes.<br/>
+            If you didn’t request this, you can safely ignore this email.
+          </p>
+        </div>
+      </body>
+    </html>
+    """
+
+    msg = MIMEText(html_content, "html")
+    msg["Subject"] = "Reset Your TwitchSentiment Analysis Password"
+    msg["From"] = from_header
+    msg["To"] = recipient_email
+    msg["Reply-To"] = "no-reply@example.com"
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, [recipient_email], msg.as_string())
+    except Exception as e:
+        logging.error(f"Failed to send email to {recipient_email}: {e}")
+        raise
+
+
+@app.route('/api/user/check-password', methods=['POST'])
+def check_password():
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        password = data.get('password')
+
+        if not user_id or not password:
+            return jsonify({'error': 'User ID and password are required.'}), 400
+
+        user = users_collection.find_one({"_id": ObjectId(user_id)})
+        if not user:
+            return jsonify({'error': 'User not found.'}), 404
+
+        # Try both possible password fields for compatibility
+        password_hash = user.get('password_hash') or user.get('password')
+        if not password_hash:
+            return jsonify({'error': 'Password not set for user.'}), 500
+
+        if check_password_hash(password_hash, password):
+            return jsonify({'success': True}), 200
+        else:
+            return jsonify({'error': 'Incorrect password'}), 400
+    except Exception as e:
+        logging.error(f"Error in check_password: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+# INSERT_YOUR_CODE
+@app.route('/api/user/delete', methods=['DELETE'])
+def delete_account():
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        password = data.get('password')
+
+        if not user_id or not password:
+            return jsonify({'error': 'User ID and password are required.'}), 400
+
+        user = users_collection.find_one({"_id": ObjectId(user_id)})
+        if not user:
+            return jsonify({'error': 'User not found.'}), 404
+
+        # Password field may be 'password' or 'password_hash' depending on your schema
+        password_field = 'password'
+        if 'password_hash' in user:
+            password_field = 'password_hash'
+
+        if not check_password_hash(user[password_field], password):
+            return jsonify({'error': 'Incorrect password.'}), 401
+
+        # Set status to 'inactive' instead of deleting
+        users_collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"status": "inactive"}}
+        )
+
+        activity = "Deleted Account"
+        details = "User account marked as inactive."
+        log_activity(activity, user_id, details)
+
+        return jsonify({'message': 'Account has been deactivated (status set to inactive).'}), 200
+
+    except Exception as e:
+        logging.error(f"Error deleting account: {e}")
+        return jsonify({'error': 'Internal server error.'}), 500
+
+# Helper function to check allowed file types
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'gif'}
+
+fs = gridfs.GridFS(db)  # Create a GridFS instance
+
+@app.route("/api/user/upload-profile-image", methods=["POST"])
+def upload_profile_image():
+    try:
+        # Get user_id from form data (not JSON)
+        user_id = request.form.get('user_id')
+        if not user_id:
+            return jsonify({"error": "User ID is required"}), 400
+
+        # Check if the user exists in the database
+        user = users_collection.find_one({"_id": ObjectId(user_id)})
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        # Ensure the file is in the request
+        if 'profile_image' not in request.files:
+            return jsonify({"error": "No file part"}), 400
+
+        profile_image = request.files['profile_image']
+        if profile_image.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+
+        # Check file extension
+        if not allowed_file(profile_image.filename):
+            return jsonify({"error": "Invalid file type. Allowed types: jpg, jpeg, png, gif."}), 400
+
+        # If user already has a profile image, update the existing one in GridFS
+        old_file_id = user.get("profile_image")
+        if old_file_id:
+            try:
+                # Overwrite the existing file in GridFS by updating its contents
+                # GridFS does not support in-place update, so we have to delete and re-upload
+                fs.delete(ObjectId(old_file_id))
+            except Exception:
+                pass  # If file doesn't exist or can't be deleted, ignore
+
+        # Secure the filename and store it in GridFS
+        filename = secure_filename(profile_image.filename)
+        file_id = fs.put(profile_image, filename=filename, content_type=profile_image.mimetype)
+
+        # Store the file_id as a string in the user's profile
+        users_collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"profile_image": str(file_id)}}  # Store the file ID as a string
+        )
+
+        # Return the direct API URL for the image
+        file_url = f"http://localhost:8080/api/user/profile-image/{file_id}"
+
+        return jsonify({
+            "message": "Profile image updated successfully.",
+            "profile_image": file_url
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": "Failed to update profile image", "message": str(e)}), 500
+
+@app.route("/api/user/profile-image/<file_id>", methods=["GET"])
+def get_profile_image(file_id):
+    try:
+        # Retrieve the file from GridFS
+        file = fs.get(ObjectId(file_id))
+        # Use the content_type stored in GridFS, fallback to 'image/jpeg'
+        content_type = file.content_type if hasattr(file, 'content_type') and file.content_type else 'image/jpeg'
+        return Response(file.read(), mimetype=content_type)
+    except gridfs.errors.NoFile:
+        return jsonify({"error": "File not found"}), 404
+    except Exception as e:
+        return jsonify({"error": "Failed to retrieve profile image", "message": str(e)}), 500
 
 if __name__ == "__main__":
     logging.info("Starting the server on port 8080...")

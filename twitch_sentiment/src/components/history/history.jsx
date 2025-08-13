@@ -18,6 +18,7 @@ function History() {
   const [dateSort, setDateSort] = useState('latest');
   const [chatSort, setChatSort] = useState('');
   const [activeFilter, setActiveFilter] = useState('none');
+  const [searchTerm, setSearchTerm] = useState('');
   const navigate = useNavigate();
 
   const user = JSON.parse(localStorage.getItem("user"));
@@ -46,6 +47,19 @@ function History() {
   useEffect(() => {
     let filteredData = [...sessions];
 
+    // Apply search filter
+    if (searchTerm.trim() !== '') {
+      const lowerSearch = searchTerm.toLowerCase();
+      filteredData = filteredData.filter(session => {
+        // Search by streamer name, and if adminMode, also by user_full_name
+        const streamerMatch = session.streamer_name?.toLowerCase().includes(lowerSearch);
+        const userMatch = adminMode && session.user_full_name
+          ? session.user_full_name.toLowerCase().includes(lowerSearch)
+          : false;
+        return streamerMatch || userMatch;
+      });
+    }
+
     if (nameSort) {
       filteredData.sort((a, b) =>
         nameSort === 'asc'
@@ -71,7 +85,7 @@ function History() {
     }
 
     setFiltered(filteredData);
-  }, [nameSort, dateSort, chatSort, sessions, activeFilter]);
+  }, [nameSort, dateSort, chatSort, sessions, activeFilter, searchTerm, adminMode]);
 
   const handleDelete = async (id) => {
     const result = await Swal.fire({
@@ -113,22 +127,22 @@ function History() {
   };
 
   return (
-    <div className={adminMode ? "" : "p-10 max-w-7xl mx-auto bg-[#0e0e10] min-h-screen rounded-lg shadow-2xl text-gray-300 font-sans"}>
+    <div className={adminMode ? "" : "p-10 px-40 mx-auto min-h-screen rounded-lg shadow-2xl text-gray-300 font-sans"}>
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <h2 className="text-4xl font-black text-[#9146FF]">Chat Analysis History</h2>
 
         <input
           type="text"
-          placeholder="Search by name..."
-          // value={searchTerm}
-          // onChange={(e) => setSearchTerm(e.target.value)}
-          className="bg-[#1f1f23] placeholder-gray-500 text-white border border-[#9146FF] rounded-md px-4 py-2 shadow-md focus:outline-none focus:ring-2 focus:ring-[#9146FF]"
+          placeholder={adminMode ? "Search by streamer or user..." : "Search by streamer..."}
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          className="bg-[#1f1f23] placeholder-gray-500 text-white border border-[#9146FF] rounded-md px-2 py-2 shadow-md focus:outline-none focus:ring-2 focus:ring-[#9146FF] w-96"
         />
       </div>
 
       <div
         className="overflow-y-auto rounded-lg shadow-lg border border-[#2c2c32] bg-[#1f1f23]"
-        style={adminMode ? { height: 'calc(100vh - 172px)' } : undefined}
+        style={adminMode ? { height: 'calc(100vh - 212px)' } : { height: 'calc(100vh - 212px)' }}
       >
         <div className="max-h-[770px] overflow-y-auto">
           <table className="min-w-full text-sm table-fixed">

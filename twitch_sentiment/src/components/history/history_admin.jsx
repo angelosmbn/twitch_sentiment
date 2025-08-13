@@ -107,11 +107,11 @@ function HistoryAdmin() {
   return (
     <div className="p-10 max-w-7xl mx-auto bg-[#0e0e10] min-h-screen rounded-lg shadow-2xl text-gray-300 font-sans">
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-        <h2 className="text-4xl font-black text-[#9146FF]">Chat Analysis History</h2>
+        <h2 className="text-4xl font-black text-[#9146FF]">Chat Analysis Historyss</h2>
       </div>
 
       <div className="overflow-x-auto rounded-lg shadow-lg border border-[#2c2c32] bg-[#1f1f23]">
-        <div className="max-h-[770px] overflow-y-auto">
+        <div className="max-h-[700px] overflow-y-auto">
           <table className="min-w-full text-sm table-fixed">
             <thead className="bg-[#26262c] text-white sticky top-0">
               <tr>

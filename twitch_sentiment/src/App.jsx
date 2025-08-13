@@ -1,15 +1,20 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from "react-router-dom";
 import { useState, useEffect, useRef } from 'react';
-import { FaUserCircle } from 'react-icons/fa';
+import { FaBars } from 'react-icons/fa';
 import SentimentStream from './components/sentiment/sentiment.jsx';
 import History from './components/history/history';
 import HistoryDetail from './components/history/history_detailed';
 import LoginSignup from "./components/auth/LoginSignup";
+import ForgotPassword from "./components/auth/forgot_password";
 import Settings from "./components/settings/settings";
 import Users from "./components/users/users";
 import UsersDetail from "./components/users/users_detailed";
 import Logs from "./components/logs/logs";
 import Dashboard from "./components/dashboard/dashboard";
+import Home from "./components/home/home";
+import About from "./components/about/about";
+import Contact from "./components/contact/contact";
+import ResetPassword from "./components/auth/reset_password";
 import "./index.css";
 import "./App.css";
 
@@ -35,66 +40,65 @@ function useBackendReady() {
   return ready;
 }
 
-function Home() {
-  return (
-    <div className="p-10 text-center text-xl font-semibold text-white bg-[#0a0a0d]">
-      Welcome to Twitch Insights. Use the navigation to explore sentiment analysis.
-    </div>
-  );
-}
-
-function About() {
-  return (
-    <div className="p-10 text-center text-xl font-semibold text-white bg-[#0a0a0d]">
-      About Us: We analyze Twitch chat to give you live audience insights.
-    </div>
-  );
-}
-
 function AppLayout() {
   const location = useLocation();
   const [profileOpen, setProfileOpen] = useState(false);
   const [adminMode, setAdminMode] = useState(() => {
-    // Retrieve the adminMode from localStorage, default to false
     const savedAdminMode = localStorage.getItem('adminMode');
-    return savedAdminMode === 'true'; // Convert the stored value to a boolean
+    return savedAdminMode === 'true';
   });
 
-  const [hasRedirected, setHasRedirected] = useState(false); // Flag to track redirection
-  const hideNavbar = location.pathname === "/auth";
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const user = JSON.parse(localStorage.getItem("user"));
   const is_admin = user?.role === "admin";
-
   const dropdownRef = useRef(null);
+  const [streamStarted, setStreamStarted] = useState(false);
 
-  // Effect to persist adminMode in localStorage when it changes
   useEffect(() => {
-    // Save the updated adminMode to localStorage when it changes
+    let timeoutId;
+  
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+  
+      if (!streamStarted && user) {
+        timeoutId = setTimeout(() => {
+          // Auto logout
+          localStorage.clear();
+          window.location.href = "/auth";
+        }, 15 * 60 * 1000); // 15 minutes
+      }
+    };
+  
+    const activityEvents = ["mousemove", "keydown", "click", "touchstart"];
+  
+    activityEvents.forEach((event) =>
+      window.addEventListener(event, resetTimer)
+    );
+  
+    resetTimer(); // start timer on mount
+  
+    return () => {
+      activityEvents.forEach((event) =>
+        window.removeEventListener(event, resetTimer)
+      );
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [streamStarted, user]);
+  
+
+  useEffect(() => {
     localStorage.setItem('adminMode', adminMode);
   }, [adminMode]);
 
   useEffect(() => {
-    // Only redirect when adminMode is toggled
-    const handleAdminModeToggle = () => {
-      // When adminMode is enabled, redirect to /dashboard
-      if (adminMode && location.pathname !== '/dashboard') {
-        window.location.href = '/dashboard'; // Redirect to dashboard
-      }
-      else if (!user && location.pathname == '/auth') {
-        
-      }
-      // When adminMode is disabled, redirect to /
-      else if (!adminMode && location.pathname !== '/') {
-        window.location.href = '/'; // Redirect to home
-      }
-    };
-
-    handleAdminModeToggle();
-  }, [adminMode]);
-
-  useEffect(() => {
     const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+      if (
+        profileOpen &&
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target) &&
+        !event.target.closest("#profile-dropdown-btn")
+      ) {
         setProfileOpen(false);
       }
     };
@@ -102,151 +106,486 @@ function AppLayout() {
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, []);
+  }, [profileOpen]);
 
+  // Responsive: close mobile nav on route change
+  useEffect(() => {
+    setMobileNavOpen(false);
+    setSidebarOpen(false);
+  }, [location.pathname, adminMode]);
+
+  // Improved navigation links with highlighting and better font
+  const navItems = [
+    { to: "/", label: "HOME", match: (path) => path === "/" },
+    { to: "/analyze", label: "ANALYZE", match: (path) => path.startsWith("/analyze") },
+    { to: "/history", label: "HISTORY", match: (path) => path.startsWith("/history") && !path.startsWith("/history/") },
+    { to: "/contact", label: "CONTACT US", match: (path) => path.startsWith("/contact") },
+    { to: "/about", label: "ABOUT US", match: (path) => path.startsWith("/about") },
+  ];
+
+  // Only show HISTORY if user is logged in
+  const filteredNavItems = user
+    ? navItems
+    : navItems.filter(item => item.label !== "HISTORY");
+
+  // Desktop nav links
+  const navLinks = (
+    <nav className="flex gap-2 lg:gap-4 xl:gap-6 items-center font-sans select-none">
+      {filteredNavItems.map((item) => {
+        const isActive = item.match(location.pathname);
+        return (
+          <Link
+            key={item.to}
+            to={item.to}
+            className={`relative px-4 py-1.5 rounded-lg text-base xl:text-lg font-extrabold tracking-wide transition-all duration-200
+              font-[Poppins,Inter,sans-serif]
+              ${isActive
+                ? "text-[#9146FF]"
+                : "text-white hover:text-[#9146FF]"}
+              `}
+            style={{
+              letterSpacing: "0.04em",
+              fontFamily: "'Poppins', 'Inter', 'Segoe UI', 'Arial', sans-serif",
+              transition: "all 0.18s cubic-bezier(.4,0,.2,1)",
+            }}
+            aria-current={isActive ? "page" : undefined}
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+
+  // For mobile and medium nav: add sign in/up if not logged in
+  const mobileNavLinks = (
+    <>
+      <div className="flex flex-col gap-1 font-sans">
+        {filteredNavItems.map((item) => {
+          const isActive = item.match(location.pathname);
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={`relative px-4 py-2 rounded-lg text-lg font-bold tracking-wide transition-all duration-200
+                font-[Poppins,Inter,sans-serif]
+                ${isActive
+                  ? "text-[#9146FF] bg-[#23232a]"
+                  : "text-white hover:text-[#9146FF] hover:bg-[#23232a]"}
+                `}
+              style={{
+                fontFamily: "'Poppins', 'Inter', 'Segoe UI', 'Arial', sans-serif",
+                border: isActive ? "2px solid #9146FF" : "2px solid transparent",
+              }}
+              aria-current={isActive ? "page" : undefined}
+              onClick={() => setMobileNavOpen(false)}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
+      {!user && (
+        <Link
+          to="/auth"
+          className="text-lg font-bold tracking-wide hover:text-[#9146FF] transition font-[Poppins,Inter,sans-serif] mt-2 px-4 py-2 rounded-lg bg-[#9146FF] text-white shadow-md"
+          style={{
+            fontFamily: "'Poppins', 'Inter', 'Segoe UI', 'Arial', sans-serif",
+            letterSpacing: "0.04em",
+          }}
+          onClick={() => setMobileNavOpen(false)}
+        >
+          Sign In / Sign Up
+        </Link>
+      )}
+    </>
+  );
+
+  // Improved admin sidebar links with better font and highlighting
+  const adminSidebarItems = [
+    {
+      to: "/dashboard",
+      label: "Dashboard",
+      match: (path) => path === "/dashboard"
+    },
+    {
+      to: "/all_history",
+      label: "All History",
+      match: (path) => path === "/all_history"
+    },
+    ...(is_admin
+      ? [
+          {
+            to: "/users",
+            label: "Users",
+            match: (path) => path === "/users" || path.startsWith("/users/")
+          },
+          {
+            to: "/logs",
+            label: "Logs",
+            match: (path) => path === "/logs"
+          }
+        ]
+      : [])
+  ];
+
+  const adminSidebarLinks = (
+    <ul className="space-y-2">
+      {adminSidebarItems.map((item) => {
+        const isActive = item.match(location.pathname);
+        return (
+          <li key={item.to}>
+            <Link
+              to={item.to}
+              className={`
+                block text-lg font-semibold px-6 py-3 rounded-xl transition-all duration-200
+                font-[Poppins,Inter,sans-serif]
+                tracking-wide
+                ${isActive
+                  ? "bg-[#23232a] text-[#9146FF] shadow-md border-l-4 border-[#9146FF]"
+                  : "text-white hover:text-[#9146FF] hover:bg-[#23232a]"}
+              `}
+              style={{
+                fontFamily: "'Poppins', 'Inter', 'Segoe UI', 'Arial', sans-serif",
+                letterSpacing: "0.04em",
+                borderLeft: isActive ? "4px solid #9146FF" : "4px solid transparent",
+                boxShadow: isActive ? "0 2px 12px 0 rgba(145,70,255,0.10)" : undefined,
+                transition: "all 0.18s cubic-bezier(.4,0,.2,1)",
+              }}
+              aria-current={isActive ? "page" : undefined}
+            >
+              {item.label}
+              {isActive && (
+                <span
+                  className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-2/3 rounded bg-[#9146FF] opacity-80"
+                  aria-hidden="true"
+                  style={{
+                    position: "absolute",
+                    left: "-8px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    width: "6px",
+                    height: "60%",
+                    borderRadius: "6px",
+                    background: "#9146FF",
+                    opacity: 0.8,
+                  }}
+                ></span>
+              )}
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+  
   return (
-    <div className="min-h-screen overflow-y-hidden bg-[#0a0a0d]">
+    <div className="min-h-screen bg-[#0a0a0d] overflow-y-auto">
       {/* Top Navigation (Header) */}
-      {!hideNavbar && (
-        <nav className="bg-[#0a0a0d] text-white px-6 py-4 shadow-md relative border-b border-gray-600">
-          <div className="max-w-8xl mx-auto flex justify-between items-center px-10 relative">
-            {/* Left Title */}
-            <h1 className="text-2xl font-bold z-10">
-              <span className="text-white">Twitch</span>{" "}
-              <span className="text-[#9146FF]">Insights</span>
-            </h1>
+      <nav className="bg-[#0a0a0d] text-white px-4 md:px-6 py-4 shadow-md relative border-b border-gray-600 font-sans">
+        <div className="max-w-8xl mx-auto flex items-center px-2 md:px-10 relative">
+          {/* Left Title (hide on small and medium screens) */}
+          <Link
+            to="/"
+            className="select-none cursor-pointer text-2xl md:text-3xl font-extrabold z-10 flex-shrink-0 hidden lg:block font-[Poppins,Inter,sans-serif] tracking-tight"
+            style={{ userSelect: "none", WebkitUserSelect: "none", MozUserSelect: "none" }}
+            tabIndex={0}
+            aria-label="Go to Home"
+          >
+            <span className="text-white">Twitch</span>{" "}
+            <span className="text-[#9146FF]">Insights</span>
+          </Link>
 
-            {/* Centered Links */}
-            {!adminMode && (
-              <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 flex gap-8 items-center">
-                <Link to="/" className="text-lg hover:text-[#888888] transition">HOME</Link>
+          {/* Centered Links (Desktop only, hide on md and below) */}
+          {!adminMode && (
+            <div className="hidden lg:flex absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 items-center">
+              {navLinks}
+            </div>
+          )}
 
-                {user && (
-                  <>
-                    <Link to="/analyze" className="text-lg hover:text-[#888888] transition">ANALYZE</Link>
-                    <Link to="/history" className="text-lg hover:text-[#888888] transition">HISTORY</Link>
-                  </>
-                )}
+          {/* Spacer to push right icon to the end */}
+          <div className="flex-1"></div>
 
-                <Link to="/about" className="text-lg hover:text-[#888888] transition">ABOUT US</Link>
+          {/* Hamburger for mobile and medium (always rightmost) */}
+          {!adminMode && (
+            <button
+              className="lg:hidden ml-2 p-2 rounded focus:outline-none focus:ring-2 focus:ring-[#9146FF]"
+              aria-label="Open navigation menu"
+              onClick={() => setMobileNavOpen((prev) => !prev)}
+            >
+              <FaBars size={24} />
+            </button>
+          )}
 
-              </div>
-            )}
-
-            {/* Right Profile or Sign In/Sign Up */}
-            <div className="relative flex items-center z-10">
-              {user ? (
-                <>
-                  <button
-                    onClick={() => setProfileOpen(!profileOpen)}
-                    className="text-white focus:outline-none cursor-pointer"
-                  >
-                    <FaUserCircle size={36} />
-                  </button>
-                  {profileOpen && (
+          {/* Right Profile or Sign In/Sign Up (show only on large screens) */}
+          <div className="relative flex items-center z-10">
+            {user ? (
+              <div className="relative flex items-center">
+                <button
+                  id="profile-dropdown-btn"
+                  onClick={() => setProfileOpen((prev) => !prev)}
+                  className="focus:outline-none cursor-pointer relative"
+                  aria-haspopup="true"
+                  aria-expanded={profileOpen}
+                >
+                  {user?.profile_image ? (
+                    <img
+                      src={user.profile_image}
+                      alt="Profile"
+                      className={`w-9 h-9 rounded-full object-cover transition-shadow duration-200 ${profileOpen ? "ring-4 ring-[#9146FF]/30 shadow-lg" : ""}`}
+                      style={{ minWidth: "2.25rem", minHeight: "2.25rem", userSelect: "none", WebkitUserSelect: "none", MozUserSelect: "none" }}
+                      tabIndex={-1}
+                      aria-hidden="true"
+                    />
+                  ) : (
                     <div
-                      ref={dropdownRef}
-                      className="absolute right-0 mt-48 w-56 bg-[#252529] text-white rounded-md shadow-lg z-1000"
+                      className={`w-9 h-9 rounded-full flex items-center justify-center bg-[#9146FF] text-white font-bold text-xl transition-shadow duration-200 ${profileOpen ? "ring-4 ring-[#9146FF]/30 shadow-lg" : ""}`}
+                      style={{ minWidth: "2.25rem", minHeight: "2.25rem", userSelect: "none", WebkitUserSelect: "none", MozUserSelect: "none" }}
+                      tabIndex={-1}
+                      aria-hidden="true"
                     >
-                      <div className="px-4 py-3 border-b border-gray-600">
-                        <p className="text-sm font-semibold">
-                          {user?.first_name} {user?.last_name}
-                        </p>
-                        <p className="text-xs text-gray-400">{user?.username}</p>
-                      </div>
-                      <ul className="py-1 text-sm">
-                        {/* Admin Mode Toggle */}
-                        {is_admin && (
-                          <li className="flex items-center justify-between px-4 py-2">
-                            <span>Admin Mode</span>
-                            <label className="inline-flex items-center cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={adminMode}
-                                onChange={(e) => setAdminMode(e.target.checked)}
-                                className="sr-only peer"
-                              />
-                              <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-[#9146FF] relative">
-                                <div className="dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition peer-checked:translate-x-full"></div>
-                              </div>
-                            </label>
-                          </li>
-                        )}
-                        <li>
-                          <Link
-                            to="/settings"
-                            onClick={() => setProfileOpen(false)}
-                            className="block px-4 py-2 hover:bg-gray-700"
-                          >
-                            Settings
-                          </Link>
-                        </li>
-                        <li>
-                          <button
-                            onClick={() => {
-                              localStorage.clear();
-                              window.location.href = "/auth"; // Use window.location.href for sign-out
-                            }}
-                            className="w-full block text-left px-4 py-2 hover:bg-gray-700 text-red-400"
-                          >
-                            Sign Out
-                          </button>
-                        </li>
-                      </ul>
+                      {user?.first_name ? user.first_name.charAt(0).toUpperCase() : "U"}
                     </div>
                   )}
-                </>
-              ) : (
-                <Link
-                  to="/auth"
-                  className="text-lg transition cursor-pointer"
+                </button>
+                {/* Dropdown */}
+                <div
+                  ref={dropdownRef}
+                  className={`absolute right-0 mt-2 w-72 bg-[#18181b] text-white rounded-2xl shadow-2xl z-50 transition-all duration-200 origin-top-right
+                    ${profileOpen ? "opacity-100 scale-100 pointer-events-auto" : "opacity-0 scale-95 pointer-events-none"}
+                  `}
                   style={{
-                    color: "#9146FF",
-                    textShadow: "0 0 5px #6441A5",
+                    top: "calc(100% + 0.5rem)",
+                    minWidth: "18rem",
+                    border: "1px solid #23232a",
+                    boxShadow: "0 8px 32px 0 rgba(145,70,255,0.25), 0 1.5px 4px 0 rgba(0,0,0,0.15)"
                   }}
-                  onMouseEnter={(e) => (e.target.style.color = "#FFFFFF")}
-                  onMouseLeave={(e) => (e.target.style.color = "#9146FF")}
                 >
-                  Sign In / Sign Up
+                  <div className="flex items-center gap-3 px-5 py-4 border-b border-[#23232a] rounded-t-2xl bg-[#23232a]">
+                    {user?.profile_image ? (
+                      <img
+                        src={user.profile_image}
+                        alt="Profile"
+                        className="w-12 h-12 rounded-full object-cover shadow-md"
+                        style={{ userSelect: "none" }}
+                        tabIndex={-1}
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <div
+                        className="w-12 h-12 rounded-full flex items-center justify-center bg-[#9146FF] text-white font-bold text-2xl shadow-md"
+                        style={{ userSelect: "none" }}
+                        tabIndex={-1}
+                        aria-hidden="true"
+                      >
+                        {user?.first_name ? user.first_name.charAt(0).toUpperCase() : "U"}
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-base font-semibold leading-tight">
+                        {user?.first_name} {user?.last_name}
+                      </p>
+                      <p className="text-xs text-gray-400">{user?.username}</p>
+                    </div>
+                  </div>
+                  <ul className="py-2 text-base">
+                    {/* Admin Mode Toggle */}
+                    {is_admin && (
+                      <li className="flex items-center justify-between px-5 py-3 hover:bg-[#23232a] transition rounded-xl">
+                        <span className="font-medium">Admin Mode</span>
+                        <label className="inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={adminMode}
+                            onChange={(e) => {
+                              setAdminMode(e.target.checked);
+                              if (e.target.checked) {
+                                window.location.href = "/dashboard";
+                              } else {
+                                window.location.href = "/";
+                              }
+                            }}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:bg-[#9146FF] relative transition-colors duration-200">
+                            <div className="dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition peer-checked:translate-x-full"></div>
+                          </div>
+                        </label>
+                      </li>
+                    )}
+                    {!adminMode && (
+                      <li>
+                        <Link
+                          to="/settings"
+                          onClick={() => setProfileOpen(false)}
+                          className="block px-5 py-3 hover:bg-[#23232a] rounded-xl transition font-medium"
+                        >
+                          Settings
+                        </Link>
+                      </li>
+                    )}
+                    <li>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const userId = user?._id || user?.userId || user?.id;
+                            if (userId) {
+                              await fetch("http://localhost:8080/api/log/sign_out", {
+                                method: "POST",
+                                headers: {
+                                  "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({ userId }),
+                              });
+                            }
+                          } catch (e) {
+                            // Optionally handle error
+                          } finally {
+                            localStorage.clear();
+                            window.location.href = "/auth";
+                          }
+                        }}
+                        className="w-full block text-left px-5 py-3 hover:bg-[#23232a] text-red-400 rounded-xl transition font-medium"
+                      >
+                        Sign Out
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            ) : (
+              <div className="hidden lg:flex gap-2">
+                <Link
+                  to="/auth?mode=login"
+                  style={{ textDecoration: "none" }}
+                >
+                  <button
+                    type="button"
+                    className="text-lg tracking-wide font-bold px-4 py-1.5 rounded-lg border border-white transition font-[Poppins,Inter,sans-serif] bg-transparent"
+                    style={{
+                      color: "#FFFFFF",
+                      background: "transparent",
+                      fontFamily: "'Poppins', 'Inter', 'Segoe UI', 'Arial', sans-serif",
+                      letterSpacing: "0.04em",
+                      boxShadow: "none",
+                      borderColor: "#FFFFFF",
+                      cursor: "pointer",
+                    }}
+                    onMouseEnter={e => {
+                      e.target.style.color = "#9146FF";
+                      e.target.style.borderColor = "#9146FF";
+                    }}
+                    onMouseLeave={e => {
+                      e.target.style.color = "#FFFFFF";
+                      e.target.style.borderColor = "#FFFFFF";
+                    }}
+                  >
+                    Sign In
+                  </button>
                 </Link>
-              )}
+                <Link to="/auth?mode=signup" style={{ textDecoration: "none" }}>
+                  <button
+                    type="button"
+                    className="text-lg tracking-wide font-bold px-4 py-1.5 rounded-lg transition font-[Poppins,Inter,sans-serif]"
+                    style={{
+                      background: "#9146FF",
+                      color: "#FFFFFF",
+                      border: "none",
+                      fontFamily: "'Poppins', 'Inter', 'Segoe UI', 'Arial', sans-serif",
+                      letterSpacing: "0.04em",
+                      boxShadow: "none",
+                      cursor: "pointer",
+                    }}
+                    onMouseEnter={e => {
+                      e.target.style.background = "#7c3aed";
+                      e.target.style.color = "#fff";
+                    }}
+                    onMouseLeave={e => {
+                      e.target.style.background = "#9146FF";
+                      e.target.style.color = "#fff";
+                    }}
+                  >
+                    Sign Up
+                  </button>
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile & Medium Navigation Drawer */}
+        {!adminMode && (
+          <div
+            className={`fixed inset-0 z-40 bg-black bg-opacity-40 transition-opacity duration-200 lg:hidden ${mobileNavOpen ? "block" : "hidden"}`}
+            onClick={() => setMobileNavOpen(false)}
+          >
+            <div
+              className={`fixed top-0 left-0 h-full w-64 bg-[#18181b] shadow-lg z-50 transform transition-transform duration-200 ${mobileNavOpen ? "translate-x-0" : "-translate-x-full"}`}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+                <span className="text-xl font-bold text-white">Menu</span>
+                <button
+                  className="text-white text-2xl focus:outline-none"
+                  onClick={() => setMobileNavOpen(false)}
+                  aria-label="Close menu"
+                >
+                  &times;
+                </button>
+              </div>
+              <div className="flex flex-col gap-2 px-6 py-4 overflow-y-auto" style={{maxHeight: "calc(100vh - 64px)"}}>
+                {mobileNavLinks}
+              </div>
             </div>
           </div>
-        </nav>
-      )}
-
-      {/* Main Content (2 Rows: Navigation on left, content on the right) */}
-      
-        
-
-        {/* Right Content Area */}
-        
-          {adminMode ? (
-            <div className="flex">
-                {/* Left Sidebar - Fixed height, shown when Admin Mode is ON */}
-        {adminMode && (
-          <div className="w-64 bg-[#252529] text-white py-4" style={{ height: `calc(100vh - 72px)` }}>
-            <ul className="space-y-4 px-6">
-              <li>
-                <Link to="/dashboard" className="block text-lg hover:bg-gray-700 p-2 rounded-md">Dashboard</Link>
-              </li>
-              <li>
-                <Link to="/all_history" className="block text-lg hover:bg-gray-700 p-2 rounded-md">All History</Link>
-              </li>
-              {is_admin && (
-                <>
-                  <li>
-                    <Link to="/users" className="block text-lg hover:bg-gray-700 p-2 rounded-md">Users</Link>
-                  </li>
-                  <li>
-                    <Link to="/logs" className="block text-lg hover:bg-gray-700 p-2 rounded-md">Logs</Link>
-                  </li>
-                </>
-              )}
-            </ul>
-          </div>
         )}
-            <div className="flex-1 p-4" style={{ height: `calc(100vh - 72px)`}}>
+      </nav>
+
+      {/* Main Content */}
+      {adminMode ? (
+        <div className="flex flex-col md:flex-row h-[calc(100vh-72px)]" style={{ overflowY: "hidden" }}>
+          {/* Sidebar for admin - responsive */}
+          <div>
+            {/* Hamburger for sidebar on small screens */}
+            <button
+              className="md:hidden m-2 p-2 rounded focus:outline-none focus:ring-2 focus:ring-[#9146FF] bg-[#18181b] text-white"
+              aria-label="Open sidebar"
+              onClick={() => setSidebarOpen((prev) => !prev)}
+            >
+              <FaBars size={22} />
+            </button>
+            {/* Sidebar Drawer (mobile) */}
+            <div
+              className={`fixed inset-0 z-40 bg-black bg-opacity-40 transition-opacity duration-200 md:hidden ${sidebarOpen ? "block" : "hidden"}`}
+              onClick={() => setSidebarOpen(false)}
+            >
+              <div
+                className={`fixed top-0 left-0 h-full w-64 bg-[#18181b] shadow-lg z-50 transform transition-transform duration-200 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+                  <span className="text-xl font-bold text-white font-[Poppins,Inter,sans-serif] tracking-wide">Admin</span>
+                  <button
+                    className="text-white text-2xl focus:outline-none"
+                    onClick={() => setSidebarOpen(false)}
+                    aria-label="Close sidebar"
+                  >
+                    &times;
+                  </button>
+                </div>
+                <nav className="py-4">{adminSidebarLinks}</nav>
+              </div>
+            </div>
+            {/* Sidebar (desktop) */}
+            <div className="hidden md:block w-56 lg:w-64 bg-[#18181b] text-white py-8 font-[Poppins,Inter,sans-serif] h-full min-h-[calc(100vh-72px)]">
+              <div className="mb-8 px-6">
+                <span className="text-2xl font-extrabold tracking-tight text-[#9146FF] font-[Poppins,Inter,sans-serif]">Admin</span>
+              </div>
+              {adminSidebarLinks}
+            </div>
+          </div>
+          {/* Main admin content */}
+          <div className="flex-1 p-2 md:p-4" style={{ minHeight: 0 }}>
             <div className="admin-content">
               <Routes>
                 <Route path="/users" element={<Users />} />
@@ -257,20 +596,71 @@ function AppLayout() {
                 <Route path="/history/:id" element={<HistoryDetail />} />
               </Routes>
             </div>
-            </div>
-            </div>
-          ) : (
-              <Routes>
-                <Route path="/" element={<Home />} />
-                <Route path="/analyze" element={<SentimentStream />} />
-                <Route path="/history" element={<History />} />
-                <Route path="/history/:id" element={<HistoryDetail />} />
-                <Route path="/about" element={<About />} />
-                <Route path="/auth" element={<LoginSignup />} />
-                <Route path="/settings" element={<Settings />} />
-              </Routes>
-          )}
-      
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col min-h-[calc(100vh-72px)]">
+          <div className="flex-1 overflow-y-auto">
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route
+                path="/analyze"
+                element={
+                  <SentimentStream
+                    streamStarted={streamStarted}
+                    setStreamStarted={setStreamStarted}
+                  />
+                }
+              />
+              <Route path="/history" element={<History />} />
+              <Route path="/history/:id" element={<HistoryDetail />} />
+              <Route path="/contact" element={<Contact />} />
+              <Route path="/about" element={<About />} />
+              <Route path="/auth" element={<LoginSignup />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </div>
+        </div>
+      )}
+
+      {/* Responsive styles for custom breakpoints */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&display=swap');
+        @media (max-width: 640px) {
+          .admin-content {
+            padding: 0.5rem !important;
+          }
+        }
+        @media (min-width: 641px) and (max-width: 1023px) {
+          .admin-content {
+            padding: 1rem !important;
+            overflow-y: auto !important;
+            max-height: calc(100vh - 72px) !important;
+          }
+          /* Hide header title and right profile/signin on md (medium) screens */
+          nav h1,
+          nav .relative.flex.items-center.z-10 {
+            display: none !important;
+          }
+        }
+        @media (min-width: 1024px) {
+          .admin-content {
+            padding: 1.5rem !important;
+          }
+        }
+        /* Ensure scrolling for main content on small and medium screens */
+        @media (max-width: 1023px) {
+          html, body, #root, .min-h-screen, .flex-1, .admin-content {
+            overflow-y: auto !important;
+          }
+        }
+        /* Admin sidebar font and highlight improvements */
+        .font-[Poppins\\,Inter\\,sans-serif] {
+          font-family: 'Poppins', 'Inter', 'Segoe UI', 'Arial', sans-serif !important;
+        }
+      `}</style>
     </div>
   );
 }

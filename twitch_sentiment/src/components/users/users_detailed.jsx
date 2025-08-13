@@ -67,7 +67,7 @@ function UserDetail() {
   }
 
   return (
-    <div className="p-8 flex flex-col items-center min-h-screen bg-[#121214] text-white font-sans">
+    <div className="p-8 flex flex-col items-center min-h-screen text-white font-sans">
         <div className="bg-[#1f1f23] rounded-lg shadow-xl p-8 max-w-5xl w-full">
             {/* Back and Edit buttons alignment */}
         <div className="w-full max-w-5xl flex justify-between items-center mb-6">
@@ -160,16 +160,16 @@ function UserDetail() {
           {isEditing ? (
             <div className="flex justify-center space-x-6 mt-6">
               <button
-                onClick={handleSave}
-                className="px-6 py-3 bg-[#9146FF] text-white rounded-md hover:bg-[#772ce8] transition-all"
-              >
-                Save
-              </button>
-              <button
                 onClick={handleCancel}
                 className="px-6 py-3 bg-[#6441A5] text-white rounded-md hover:bg-[#4b2e91] transition-all"
               >
                 Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                className="px-6 py-3 bg-[#9146FF] text-white rounded-md hover:bg-[#772ce8] transition-all"
+              >
+                Save
               </button>
             </div>
           ) : null}

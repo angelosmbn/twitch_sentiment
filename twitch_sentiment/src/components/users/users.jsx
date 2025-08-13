@@ -127,11 +127,11 @@ function Users() {
           placeholder="Search by name..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="bg-[#1f1f23] placeholder-gray-500 text-white border border-[#9146FF] rounded-md px-4 py-2 shadow-md focus:outline-none focus:ring-2 focus:ring-[#9146FF]"
+          className="bg-[#1f1f23] placeholder-gray-500 text-white border border-[#9146FF] rounded-md px-2 py-2 shadow-md focus:outline-none focus:ring-2 focus:ring-[#9146FF] w-96"
         />
       </div>
 
-      <div className="overflow-y-auto rounded-lg shadow-lg border border-[#2c2c32] bg-[#1f1f23]" style={{ height: 'calc(100vh - 172px)' }}>
+      <div className="overflow-y-auto rounded-lg shadow-lg border border-[#2c2c32] bg-[#1f1f23]" style={{ height: 'calc(100vh - 212px)' }}>
         <div className="max-h-[770px] overflow-y-auto">
           <table className="min-w-full text-sm table-fixed">
             <thead className="bg-[#26262c] text-white sticky top-0">

@@ -2,3 +2,5 @@ server/venv/
 venv/
 .env
 server/app.log
+__pycache__
+mongo_data

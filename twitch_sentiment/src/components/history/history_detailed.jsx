@@ -16,6 +16,11 @@ function HistoryDetail() {
   const [session, setSession] = useState(null);
   const [allSessions, setAllSessions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(null);
+  // Get adminMode from localStorage (as in App.jsx)
+  const [adminMode, setAdminMode] = useState(() => {
+    const savedAdminMode = localStorage.getItem('adminMode');
+    return savedAdminMode === 'true';
+  });
 
   const user = JSON.parse(localStorage.getItem("user"));
   const userId = user?.id;
@@ -98,9 +103,9 @@ function HistoryDetail() {
   };
 
   return (
-    <div className="p-6 flex flex-col items-center min-h-screen bg-[#121214] text-white font-sans">
+    <div className={`${adminMode ? "" : "p-6"} flex flex-col items-center min-h-screen text-white font-sans`}>
       {/* Pagination */}
-      <div className="w-full max-w-5xl flex justify-between items-center mb-4">
+      <div className={`w-full ${adminMode ? "" : "px-40"} flex justify-between items-center mb-4`}>
         <button
           onClick={() => goTo(-1)}
           disabled={allSessions.length === 0}
@@ -121,11 +126,14 @@ function HistoryDetail() {
       </div>
 
       {/* Session Card */}
-      <div className="bg-[#1f1f23] rounded-lg shadow-xl p-8 max-w-5xl w-full relative overflow-y-auto" style={{ maxHeight: 'calc(100vh - 120px)', ...scrollbarStyles }}>
+      <div
+        className={`bg-[#1f1f23] rounded-lg shadow-xl p-8 relative overflow-y-auto overflow-x-hidden ${adminMode ? "" : "mx-40"}`}
+        style={{ maxHeight: adminMode ? 'calc(100vh - 150px)' : 'calc(100vh - 170px)', ...scrollbarStyles }}
+      >
         {/* Header */}
-        <div className="flex justify-between items-center absolute top-8 left-4 w-full">
+        <div className="flex justify-between items-center absolute px-7 left-4 w-full">
           <button
-            onClick={() => navigate("/history")}
+            onClick={() => navigate(adminMode ? "/all_history" : "/history")}
             className="flex items-center gap-2 text-[#9146FF] hover:text-[#772ce8] transition cursor-pointer"
           >
             <FaArrowLeft />
